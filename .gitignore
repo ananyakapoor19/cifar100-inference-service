@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# PyTorch checkpoints (large binaries – push to GCS instead)
+checkpoints/*.pth
+checkpoints/*.pt
+data/
+
+# Locust results
+results/
+*.csv
+*.html
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.DS_Store
+
+# Docker
+.dockerignore
+
+# Secrets / credentials
+*.json
+!infra/**/*.json
+!checkpoints/quant_comparison.json
+!checkpoints/gcs_manifest.txt
+.env
+service-account-key.json
+
+# Claude Code internal
+.claude/
+
+# Pytest cache
+.pytest_cache/

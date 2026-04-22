@@ -1,0 +1,16 @@
+# Dev / test / benchmark dependencies (not needed in production image)
+-r requirements.txt
+
+# Testing
+pytest>=8.1.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0
+
+# Benchmarking
+locust>=2.24.0
+matplotlib>=3.8.0
+pandas>=2.2.0
+
+# Notebook
+jupyter>=1.0.0
+ipykernel>=6.29.0
