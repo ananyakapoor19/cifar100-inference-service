@@ -1,0 +1,12 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - build
+  - '-f'
+  - 'docker/Dockerfile.gpu'
+  - '-t'
+  - 'gcr.io/$PROJECT_ID/cifar100-inference:gpu-latest'
+  - '.'
+images:
+- 'gcr.io/$PROJECT_ID/cifar100-inference:gpu-latest'
+timeout: '1800s'

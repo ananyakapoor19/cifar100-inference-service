@@ -1,0 +1,48 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: cifar100-inference
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Auto-scaling: 0 → 10 replicas; cold-start is part of the experiment
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+        # Scale up when concurrency per instance exceeds 5 requests
+        autoscaling.knative.dev/target: "5"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 10
+      timeoutSeconds: 30
+      serviceAccountName: cifar100-inference-sa@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - image: gcr.io/PROJECT_ID/cifar100-inference:cpu-latest
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: MODEL_FP32_PATH
+              value: gs://YOUR_BUCKET/models/efficientnet_b0_cifar100/efficientnet_b0_cifar100_fp32.pth
+            - name: MODEL_INT8_PATH
+              value: gs://YOUR_BUCKET/models/efficientnet_b0_cifar100/efficientnet_b0_cifar100_int8.pth
+            - name: LOG_LEVEL
+              value: "info"
+          resources:
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 30
