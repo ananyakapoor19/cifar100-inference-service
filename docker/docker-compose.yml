@@ -1,0 +1,75 @@
+version: "3.9"
+
+# ── Local development / testing compose file ──────────────────────────────────
+# Usage:
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Set MODEL_FP32_PATH and MODEL_INT8_PATH in a .env file or via environment.
+
+services:
+  inference-cpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: cifar100-inference:cpu
+    container_name: cifar100-cpu
+    ports:
+      - "8080:8080"
+    environment:
+      - MODEL_FP32_PATH=${MODEL_FP32_PATH:-/models/efficientnet_b0_cifar100_fp32.pth}
+      - MODEL_INT8_PATH=${MODEL_INT8_PATH:-/models/efficientnet_b0_cifar100_int8.pth}
+      - PORT=8080
+      - LOG_LEVEL=info
+    volumes:
+      # Mount local checkpoints directory so you don't need GCS during dev
+      - ../checkpoints:/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  inference-gpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu
+    image: cifar100-inference:gpu
+    container_name: cifar100-gpu
+    ports:
+      - "8081:8080"
+    environment:
+      - MODEL_FP32_PATH=${MODEL_FP32_PATH:-/models/efficientnet_b0_cifar100_fp32.pth}
+      - MODEL_INT8_PATH=${MODEL_INT8_PATH:-/models/efficientnet_b0_cifar100_int8.pth}
+      - PORT=8080
+      - LOG_LEVEL=info
+    volumes:
+      - ../checkpoints:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - gpu   # Only start with: docker compose --profile gpu up
+    restart: unless-stopped
+
+  locust:
+    image: locustio/locust:latest
+    container_name: cifar100-locust
+    ports:
+      - "8089:8089"
+    volumes:
+      - ../benchmarks:/mnt/locust
+    command: >
+      -f /mnt/locust/locustfile.py
+      --host http://inference-cpu:8080
+      --web-port 8089
+    depends_on:
+      inference-cpu:
+        condition: service_healthy
+    profiles:
+      - benchmark
