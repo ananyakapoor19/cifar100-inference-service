@@ -1,0 +1,2 @@
+gs://cifar100-models-amlc/models/efficientnet_b0_cifar100/efficientnet_b0_cifar100_fp32.pth
+gs://cifar100-models-amlc/models/efficientnet_b0_cifar100/efficientnet_b0_cifar100_int8.pth
