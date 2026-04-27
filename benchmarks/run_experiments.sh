@@ -51,7 +51,7 @@ for precision in "${PRECISIONS[@]}"; do
 
       PRECISION="$precision" \
       BATCH_SIZE="$batch_size" \
-      locust \
+      python3 -m locust \
         -f benchmarks/locustfile.py \
         --headless \
         --users "$concurrency" \
@@ -72,7 +72,7 @@ echo "============================================================"
 echo " All $total cells complete. Generating analysis charts…"
 echo "============================================================"
 
-python benchmarks/analysis/plot_results.py \
+python3 benchmarks/analysis/plot_results.py \
   --results-dir "$RESULTS_DIR" \
   --output-dir  "$RESULTS_DIR/charts"
 
