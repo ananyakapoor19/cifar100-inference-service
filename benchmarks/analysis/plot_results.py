@@ -78,7 +78,7 @@ def load_stats(results_dir: str) -> pd.DataFrame:
                 "p50_ms":      float(row.get("50%", 0)),
                 "p95_ms":      float(row.get("95%", 0)),
                 "p99_ms":      float(row.get("99%", 0)),
-                "avg_ms":      float(row.get("Average (ms)", 0)),
+                "avg_ms":      float(row.get("Average Response Time", 0)),
             })
         except Exception as e:
             print(f"  WARNING: could not parse {csv_path}: {e}")

@@ -18,10 +18,11 @@ checkpoints/*.pth
 checkpoints/*.pt
 data/
 
-# Locust results
-results/
-*.csv
-*.html
+# Locust results – track curated outputs only, not raw CSVs/HTML
+results/**/stats_*.csv
+results/**/locust.log
+results/**/*.html
+!results/**/charts/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -42,6 +43,7 @@ notebooks/.ipynb_checkpoints/
 *.json
 !infra/**/*.json
 !checkpoints/quant_comparison.json
+!results/**/charts/*.json
 !checkpoints/gcs_manifest.txt
 .env
 service-account-key.json
