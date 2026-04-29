@@ -87,7 +87,7 @@ python model/quantize.py \
     --data-dir ./data
 ```
 
-This runs post-training static quantization and saves:
+This runs post-training dynamic quantization (Linear + Conv2d layers) and saves:
 - `checkpoints/efficientnet_b0_cifar100_int8.pth` – TorchScript INT8 model
 - `checkpoints/quant_comparison.json` – accuracy + latency comparison
 

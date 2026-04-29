@@ -32,9 +32,13 @@ IMG_SIZE = 224
 
 
 def get_dataloaders(data_dir: str, batch_size: int, num_workers: int = 4):
+    # RandomResizedCrop gives genuine crop diversity when upscaling 32×32→224×224.
+    # The old Resize(224)+RandomCrop(224, padding=4) produced only a ±4-pixel shift
+    # (1.8% of the image), which is negligible augmentation at this resolution.
+    # scale=(0.5, 1.0) ensures crops cover at least half the original pixel area,
+    # avoiding excessively blurry zoomed-in patches from tiny 32×32 sources.
     train_tf = transforms.Compose([
-        transforms.Resize(IMG_SIZE),
-        transforms.RandomCrop(IMG_SIZE, padding=4),
+        transforms.RandomResizedCrop(IMG_SIZE, scale=(0.5, 1.0)),
         transforms.RandomHorizontalFlip(),
         transforms.RandAugment(num_ops=2, magnitude=9),
         transforms.ToTensor(),
@@ -80,7 +84,7 @@ def unfreeze_backbone(model: nn.Module) -> None:
         param.requires_grad = True
 
 
-def train_one_epoch(model, loader, criterion, optimizer, device, epoch):
+def train_one_epoch(model, loader, criterion, optimizer, device, epoch, clip_grad: float = 1.0):
     model.train()
     total_loss, correct, total = 0.0, 0, 0
     for i, (images, labels) in enumerate(loader):
@@ -89,6 +93,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, epoch):
         outputs = model(images)
         loss = criterion(outputs, labels)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
         optimizer.step()
 
         total_loss += loss.item() * images.size(0)
@@ -130,7 +135,14 @@ def main():
     parser.add_argument("--warmup-epochs", type=int, default=5,
                         help="Epochs to train only the head before unfreezing backbone")
     parser.add_argument("--workers",     type=int,   default=4)
-    parser.add_argument("--device",      type=str,   default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--clip-grad",   type=float, default=1.0,
+                        help="Max gradient norm for clipping (0 to disable)")
+    _default_device = (
+        "cuda" if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available()
+        else "cpu"
+    )
+    parser.add_argument("--device",      type=str,   default=_default_device)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -161,7 +173,7 @@ def main():
             ], weight_decay=1e-4)
             scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs - args.warmup_epochs)
 
-        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device, epoch)
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device, epoch, args.clip_grad)
         val_loss,   val_acc   = evaluate(model, val_loader, criterion, device)
         scheduler.step()
 
