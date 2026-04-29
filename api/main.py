@@ -155,7 +155,9 @@ def predict(req: PredictRequest):
             tensor = preprocess(pil_image)
 
         with profiler.stage("forward"):
-            predictions_raw, _ = run_inference(model, tensor, registry.device)
+            # Dynamic Device Routing: If it's INT8, use CPU. Otherwise, use the GPU.
+            target_device = "cpu" if req.model_precision == "int8" else registry.device
+            predictions_raw, _ = run_inference(model, tensor, target_device)
 
         with profiler.stage("postprocess"):
             top5 = [
@@ -217,7 +219,8 @@ def predict_batch(req: BatchPredictRequest):
             batch_tensor = preprocess_batch(pil_images)
 
         with profiler.stage("forward"):
-            all_preds, _ = run_inference(model, batch_tensor, registry.device)
+            target_device = "cpu" if req.model_precision == "int8" else registry.device
+            all_preds, _ = run_inference(model, batch_tensor, target_device)
 
         with profiler.stage("postprocess"):
             results = []
