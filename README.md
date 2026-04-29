@@ -22,12 +22,13 @@ The primary research questions are:
 cifar100-inference-service/
 ├── model/
 │   ├── train.py            # Fine-tune EfficientNet-B0 on CIFAR-100
-│   ├── quantize.py         # INT8 post-training quantization
+│   ├── quantize.py         # INT8 post-training dynamic quantization
 │   ├── evaluate.py         # Top-1/5 accuracy evaluation
 │   └── upload_to_gcs.py    # Push checkpoints to GCS
 ├── api/
 │   ├── main.py             # FastAPI app (POST /predict, POST /predict/batch, GET /health)
 │   ├── inference.py        # ModelRegistry, preprocessing, forward pass
+│   ├── monitoring.py       # GCP Cloud Monitoring custom metrics (background flush)
 │   ├── profiling.py        # Per-request PyTorch Profiler integration
 │   └── schemas.py          # Pydantic request/response models
 ├── docker/
@@ -38,7 +39,8 @@ cifar100-inference-service/
 │   ├── locustfile.py       # Locust load test (full experiment matrix)
 │   ├── run_experiments.sh  # Execute all matrix cells
 │   └── analysis/
-│       └── plot_results.py # Parse CSVs → latency/throughput charts
+│       ├── plot_results.py # Parse CSVs → latency/throughput charts
+│       └── cost_analysis.py# Cloud Run cost-per-image analysis + charts
 ├── infra/
 │   ├── cloud_run/service.yaml   # Cloud Run Knative service spec
 │   ├── gce/startup.sh           # GCE GPU VM bootstrap
@@ -87,7 +89,7 @@ python model/quantize.py \
     --data-dir ./data
 ```
 
-This runs post-training static quantization and saves:
+This runs post-training dynamic quantization (Linear + Conv2d layers) and saves:
 - `checkpoints/efficientnet_b0_cifar100_int8.pth` – TorchScript INT8 model
 - `checkpoints/quant_comparison.json` – accuracy + latency comparison
 
@@ -98,6 +100,18 @@ MODEL_FP32_PATH=./checkpoints/efficientnet_b0_cifar100_fp32.pth \
 MODEL_INT8_PATH=./checkpoints/efficientnet_b0_cifar100_int8.pth \
 python -m api.main
 ```
+
+Cloud Monitoring is disabled automatically when `GOOGLE_CLOUD_PROJECT` is not
+set, so local dev works without any GCP credentials. To enable it:
+
+```bash
+GOOGLE_CLOUD_PROJECT=your-project \
+MODEL_FP32_PATH=./checkpoints/efficientnet_b0_cifar100_fp32.pth \
+MODEL_INT8_PATH=./checkpoints/efficientnet_b0_cifar100_int8.pth \
+python -m api.main
+```
+
+Custom metrics are flushed every 60 seconds (override with `CM_FLUSH_INTERVAL=N`).
 
 Test with curl:
 ```bash
@@ -190,7 +204,7 @@ Matrix: `{fp32, int8} × {batch=1, batch=8} × {concurrency=10, 50, 200}` = **12
 
 Each cell records p50/p95/p99 latency, RPS, and failure rate.
 
-### Generate charts
+### Generate latency/throughput charts
 
 ```bash
 python benchmarks/analysis/plot_results.py \
@@ -203,6 +217,21 @@ Charts produced:
 - `concurrency_heatmap.png` – p95 latency heatmap
 - `batch_comparison.png` – batch=1 vs batch=8 RPS
 - `speedup_quantization.png` – FP32 vs INT8 latency with speedup annotations
+
+### Generate cost analysis
+
+```bash
+python benchmarks/analysis/cost_analysis.py \
+    --summary  results/cloud_run_cpu/charts/summary.json \
+    --output-dir results/cloud_run_cpu/charts
+```
+
+Uses Cloud Run always-allocated pricing (2 vCPU, 2 GiB) to compute cost per
+request and cost per image for every benchmark configuration. Charts produced:
+- `cost_per_image.png` – cost per image by config × concurrency
+- `cost_vs_throughput.png` – cost-efficiency frontier (images/s vs cost/image)
+- `cost_fp32_vs_int8.png` – FP32 vs INT8 cost comparison with ratio annotations
+- `cost_analysis.json` – full enriched table with all cost metrics
 
 ---
 
@@ -259,6 +288,6 @@ Charts produced:
 
 ## Course Relevance
 
-- **Cloud Computing:** GCP Cloud Run (serverless, auto-scaling), GCE T4 GPU instance, GCS model storage, Cloud Monitoring telemetry.
-- **Deep Neural Networks:** EfficientNet-B0 transfer learning on CIFAR-100; INT8 post-training quantization with `torch.quantization`.
-- **Performance Analysis:** Systematic Locust benchmarking across a 12-cell experiment matrix; PyTorch Profiler traces decomposing latency into preprocess/forward/postprocess stages; latency-throughput curves and heatmaps.
+- **Cloud Computing:** GCP Cloud Run (serverless, 0–10 auto-scaling replicas), GCE T4 GPU instance, GCS model storage, Cloud Monitoring custom metrics (request latency, inference latency, error rate pushed as time-series from a background thread).
+- **Deep Neural Networks:** EfficientNet-B0 transfer learning on CIFAR-100 with two-phase fine-tuning; INT8 post-training dynamic quantization (Linear + Conv2d) via `torch.quantization`; accuracy vs. latency trade-off analysis.
+- **Performance Analysis:** Systematic Locust benchmarking across a 12-cell matrix (precision × batch × concurrency); PyTorch Profiler traces decomposing per-request latency into preprocess/forward/postprocess stages; latency-throughput curves, heatmaps, and Cloud Run cost-per-image analysis.
