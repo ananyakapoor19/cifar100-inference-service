@@ -16,7 +16,11 @@ spec:
         run.googleapis.com/execution-environment: gen2
     spec:
       containerConcurrency: 10
-      timeoutSeconds: 30
+      # 300s timeout: batch=8 requests at high concurrency queue up and can
+      # take 30-50s end-to-end. The original 30s limit caused failures in the
+      # fp32_b8_c200 and int8_b8_c200 benchmark cells. 300s accommodates
+      # worst-case queuing without risking runaway hung requests.
+      timeoutSeconds: 300
       serviceAccountName: cifar100-inference-sa@PROJECT_ID.iam.gserviceaccount.com
       containers:
         - image: gcr.io/PROJECT_ID/cifar100-inference:cpu-latest
