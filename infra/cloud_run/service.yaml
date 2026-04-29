@@ -30,6 +30,10 @@ spec:
               value: gs://YOUR_BUCKET/models/efficientnet_b0_cifar100/efficientnet_b0_cifar100_int8.pth
             - name: LOG_LEVEL
               value: "info"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "PROJECT_ID"
+            - name: CM_FLUSH_INTERVAL
+              value: "60"
           resources:
             limits:
               cpu: "2"

@@ -55,6 +55,13 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --role="roles/run.invoker" \
   --quiet
 
+# Grant Cloud Monitoring metric writer so the service can push custom metrics
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/monitoring.metricWriter" \
+  --quiet
+echo "Granted monitoring.metricWriter to $SA_EMAIL"
+
 echo "=== Setup complete. ==="
 echo ""
 echo "Next steps:"

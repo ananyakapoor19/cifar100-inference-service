@@ -8,12 +8,14 @@ Endpoints:
     GET  /metrics            – Prometheus-style counters (optional)
 
 Environment variables:
-    MODEL_FP32_PATH    – local path or gs:// URI to the FP32 checkpoint
-    MODEL_INT8_PATH    – local path or gs:// URI to the INT8 TorchScript file
-    HOST               – bind host (default 0.0.0.0)
-    PORT               – bind port (default 8080)
-    LOG_LEVEL          – uvicorn log level (default info)
-    MAX_BATCH_SIZE     – maximum images per batch request (default 8)
+    MODEL_FP32_PATH        – local path or gs:// URI to the FP32 checkpoint
+    MODEL_INT8_PATH        – local path or gs:// URI to the INT8 TorchScript file
+    HOST                   – bind host (default 0.0.0.0)
+    PORT                   – bind port (default 8080)
+    LOG_LEVEL              – uvicorn log level (default info)
+    MAX_BATCH_SIZE         – maximum images per batch request (default 8)
+    GOOGLE_CLOUD_PROJECT   – GCP project ID for Cloud Monitoring (auto-detected on Cloud Run)
+    CM_FLUSH_INTERVAL      – Cloud Monitoring flush interval in seconds (default 60)
 """
 
 import base64
@@ -35,6 +37,7 @@ from api.inference import (
     preprocess_batch,
     run_inference,
 )
+from api.monitoring import reporter
 from api.profiling import RequestProfiler
 from api.schemas import (
     BatchPredictRequest,
@@ -58,7 +61,7 @@ registry = ModelRegistry()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load models once before accepting requests."""
+    """Load models and start background services before accepting requests."""
     logger.info("Loading models…")
     try:
         registry.load_all()
@@ -66,7 +69,9 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error("Model loading failed: %s", exc)
         # Allow the server to start so /health can report the failure
+    reporter.start()
     yield
+    reporter.stop()
     logger.info("Shutting down.")
 
 
@@ -135,6 +140,7 @@ def predict(req: PredictRequest):
         pil_image   = decode_image(image_bytes)
     except Exception as exc:
         _counters["errors_total"] += 1
+        reporter.record(req.model_precision, "predict", 0.0, 0.0, success=False)
         raise HTTPException(status_code=400, detail=f"Invalid image: {exc}") from exc
 
     # Get model
@@ -142,6 +148,7 @@ def predict(req: PredictRequest):
         model = registry.get(req.model_precision)
     except KeyError as exc:
         _counters["errors_total"] += 1
+        reporter.record(req.model_precision, "predict", 0.0, 0.0, success=False)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     profiler = RequestProfiler(
@@ -155,9 +162,9 @@ def predict(req: PredictRequest):
             tensor = preprocess(pil_image)
 
         with profiler.stage("forward"):
-            # Dynamic Device Routing: If it's INT8, use CPU. Otherwise, use the GPU.
+            # INT8 model always runs on CPU; FP32 uses whatever device is available.
             target_device = "cpu" if req.model_precision == "int8" else registry.device
-            predictions_raw, _ = run_inference(model, tensor, target_device)
+            predictions_raw, forward_ms = run_inference(model, tensor, target_device)
 
         with profiler.stage("postprocess"):
             top5 = [
@@ -166,6 +173,7 @@ def predict(req: PredictRequest):
 
     inference_ms = (time.perf_counter() - t_total) * 1000
     _counters["inference_ms_total"] += inference_ms
+    reporter.record(req.model_precision, "predict", inference_ms, forward_ms, success=True)
 
     profile_out = None
     if req.return_profile:
@@ -201,11 +209,13 @@ def predict_batch(req: BatchPredictRequest):
         pil_images = [decode_image(base64.b64decode(b64)) for b64 in req.images_b64]
     except Exception as exc:
         _counters["errors_total"] += 1
+        reporter.record(req.model_precision, "predict_batch", 0.0, 0.0, success=False)
         raise HTTPException(status_code=400, detail=f"Invalid image in batch: {exc}") from exc
 
     try:
         model = registry.get(req.model_precision)
     except KeyError as exc:
+        reporter.record(req.model_precision, "predict_batch", 0.0, 0.0, success=False)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     profiler = RequestProfiler(
@@ -220,7 +230,7 @@ def predict_batch(req: BatchPredictRequest):
 
         with profiler.stage("forward"):
             target_device = "cpu" if req.model_precision == "int8" else registry.device
-            all_preds, _ = run_inference(model, batch_tensor, target_device)
+            all_preds, forward_ms = run_inference(model, batch_tensor, target_device)
 
         with profiler.stage("postprocess"):
             results = []
@@ -238,6 +248,7 @@ def predict_batch(req: BatchPredictRequest):
         r.inference_ms = round(per_image_ms, 3)
 
     _counters["inference_ms_total"] += total_ms
+    reporter.record(req.model_precision, "predict_batch", total_ms, forward_ms, success=True)
 
     return BatchPredictResponse(
         results=results,
