@@ -1,7 +1,7 @@
 # CIFAR-100 End-to-End Inference Service
 ### COMSE6998 – Applied Machine Learning in the Cloud
 
-**Team:** Ananya Kapoor (ak5447) · Tanmay Agrawal (ta2832) · Madhav Rajkondawar (mr4650) · Tarandeep Singh (ts3747)
+**Team:** Tanmay Agrawal (ta2832) · Ananya Kapoor (ak5447) · Tarandeep Singh (ts3747) · Madhav Rajkondawar (mr4650)
 
 ---
 
@@ -279,10 +279,10 @@ request and cost per image for every benchmark configuration. Charts produced:
 
 | Member | Responsibilities |
 |--------|-----------------|
-| Ananya Kapoor (ak5447) | Model training, quantization, GCS upload |
-| Tanmay Agrawal (ta2832) | FastAPI server, Docker, Cloud Run deployment |
-| Madhav Rajkondawar (mr4650) | GCE GPU deployment, CUDA profiling |
-| Tarandeep Singh (ts3747) | Locust benchmarking, analysis charts, report |
+| Tanmay Agrawal (ta2832) | FastAPI, INT8 quantization, Experiment matrix execution, GPU vs CPU evaluation, Live demo |
+| Ananya Kapoor (ak5447) | Repository setup, GCS & IAM setup, Dataset pipeline, FP32 and INT8 model training |
+| Tarandeep Singh (ts3747) | Docker, Cloud Run deployment, GCP infrastructure, Locust benchmarking, Analysis charts|
+| Madhav Rajkondawar (mr4650) | Unit tests, GCE instance setup, Documentation, Presentation |
 
 ---
 
