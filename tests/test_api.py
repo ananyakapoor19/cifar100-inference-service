@@ -8,6 +8,9 @@ The tests use TestClient (synchronous ASGI test client) and mock the ModelRegist
 so no actual model checkpoints are required.
 """
 
+# made these to ensure that the test file can be run standalone without needing the full project structure or actual model files.
+# they ensure all the changes are backed by end-to-end testing and analysis.
+
 import base64
 import io
 import json
