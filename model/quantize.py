@@ -1,5 +1,5 @@
 """
-quantize.py – Apply INT8 post-training static quantization to the trained FP32 model.
+quantize.py – Apply INT8 post-training dynamic quantization to the trained FP32 model.
 
 Usage:
     python model/quantize.py \
@@ -104,36 +104,50 @@ def measure_latency(model: nn.Module, device: torch.device,
     }
 
 
-def quantize_static(fp32_model: nn.Module, calib_loader: DataLoader) -> nn.Module:
+def quantize_dynamic(fp32_model: nn.Module, calib_loader: DataLoader) -> nn.Module:
     """
-    Apply INT8 post-training dynamic quantization.
+    Apply INT8 post-training dynamic quantization to both Conv2d and Linear layers.
 
-    EfficientNet-B0 uses SiLU/hardswish activations that lack quantized kernels in
-    the legacy static-PTQ path (torch.ao.quantization.prepare/convert).  Dynamic
-    quantization — which quantises Linear and Conv2d *weights* at model load time and
-    runs activations in FP32 — is the fully-supported alternative and still delivers
-    meaningful model-size reduction and latency improvement on CPU.
+    EfficientNet-B0 uses SiLU activations that are incompatible with the legacy
+    static-PTQ path (torch.ao.quantization.prepare/convert).  Dynamic quantization
+    quantises layer *weights* ahead of time and dequantises activations on-the-fly,
+    making it activation-agnostic.  Quantising Conv2d (the dominant compute) in
+    addition to the Linear head produces the meaningful latency reduction; quantising
+    only the Linear head (the old behaviour) was a no-op on a conv-dominated network.
 
-    Note: `calib_loader` is accepted for API compatibility but is not used for
-    dynamic quantization (no calibration step required).
+    On x86 we use fbgemm; on ARM/Apple Silicon we fall back to qnnpack.  If Conv2d
+    dynamic quantisation is unavailable on the current runtime (older PyTorch builds)
+    we fall back gracefully to Linear-only.
+
+    Note: `calib_loader` is accepted for API compatibility but is not used.
     """
     import copy
     import platform
 
-    print("Using dynamic quantization (static PTQ incompatible with SiLU activations).")
     model_q = copy.deepcopy(fp32_model).cpu()
     model_q.eval()
 
-    # fbgemm is x86-only; use qnnpack on ARM (Apple Silicon, ARM Linux)
     backend = "qnnpack" if platform.machine() in ("arm64", "aarch64") else "fbgemm"
     torch.backends.quantized.engine = backend
 
-    model_q = torch.quantization.quantize_dynamic(
-        model_q,
-        qconfig_spec={torch.nn.Linear},   # Conv2d dynamic quant not universally supported
-        dtype=torch.qint8,
-    )
-    print("INT8 dynamic quantization complete.")
+    # Quantise both Conv2d (backbone) and Linear (classifier head).
+    # Conv2d dynamic quantisation requires PyTorch >= 1.8 with fbgemm/qnnpack.
+    try:
+        model_q = torch.quantization.quantize_dynamic(
+            model_q,
+            qconfig_spec={torch.nn.Linear, torch.nn.Conv2d},
+            dtype=torch.qint8,
+        )
+        print(f"INT8 dynamic quantization complete (Linear + Conv2d, backend={backend}).")
+    except RuntimeError as exc:
+        print(f"WARNING: Conv2d dynamic quant failed ({exc}); falling back to Linear-only.")
+        model_q = torch.quantization.quantize_dynamic(
+            model_q,
+            qconfig_spec={torch.nn.Linear},
+            dtype=torch.qint8,
+        )
+        print("INT8 dynamic quantization complete (Linear-only fallback).")
+
     return model_q
 
 
@@ -176,7 +190,7 @@ def main():
     print(f"FP32 latency batch=8:   {fp32_lat8}")
 
     # Quantize
-    int8_model = quantize_static(fp32_model, calib_loader)
+    int8_model = quantize_dynamic(fp32_model, calib_loader)
 
     int8_acc  = evaluate_accuracy(int8_model, eval_loader, device)
     int8_lat  = measure_latency(int8_model, device, batch_size=1)
