@@ -45,6 +45,7 @@ notebooks/.ipynb_checkpoints/
 !checkpoints/quant_comparison.json
 !results/**/charts/*.json
 !results/**/summary.json
+!results/cost_comparison/*.json
 !checkpoints/gcs_manifest.txt
 .env
 service-account-key.json
